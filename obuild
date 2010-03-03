@@ -16,27 +16,28 @@ CMX = ('.cmx' if NATIVE else '.cmo')
 
 def object_of(fn):
     name, ext = splitext(fn)
-    if ext in ('.mli', '.cmi'):
-        return name + '.cmi'
     return name + CMX
 
 def source_of(fn):
     name, ext = splitext(fn)
-    if ext in ('.mli', '.cmi'):
-        return name + '.mli'
     return name + '.ml'
+
+def interf_of(fn):
+    name, ext = splitext(fn)
+    return name + '.mli'
 
 def deps_of(fn):
     src = source_of(fn)
     preproc = preproc_of(fn) or ''
-    cmd = 'ocamlfind ocamldep -native-filter %s %s' % (preproc, src)
+    filt = '-native-filter' if NATIVE else '-bytecode-filter'
+    cmd = 'ocamlfind ocamldep %s %s %s' % (filt, preproc, src)
     with os.popen(cmd) as f:
         line = f.readline().strip()
     if not line:
         return []
     else:
-        deps = line.split(':', 1)[1]
-        return [source_of(x.strip()) for x in deps.split(' ') if x.strip()]
+        _deps = [x for x in line.split(':', 1)[1].split(' ') if x.strip()]
+        return [x for x in [source_of(x.strip()) for x in _deps] if not x == fn]
 
 def find_deps(fn):
     _deps = defaultdict(list)
@@ -103,10 +104,15 @@ def build(srcfile, deps):
         if m:
             preproc = pp_for_lang(m.group(1))
 
-    cc = 'ocamlopt' if NATIVE else 'ocamlc'
-    cmd = 'ocamlfind %(cc)s %(pkg)s %(preproc)s -c %(srcfile)s' % locals()
     # deps_newer is to avoid 'inconsistent assumptions' errors.
     if FORCE or newer(srcfile, object_of(srcfile)) or deps_newer(srcfile, deps):
+        cc = 'ocamlopt' if NATIVE else 'ocamlc'
+        if isfile(interf_of(srcfile)):
+            ifile = interf_of(srcfile)
+            cmd = 'ocamlfind %(cc)s %(pkg)s %(preproc)s -c %(ifile)s' % locals()
+            print cmd
+            os.system(cmd)
+        cmd = 'ocamlfind %(cc)s %(pkg)s %(preproc)s -c %(srcfile)s' % locals()
         print cmd
         result = os.system(cmd)
         if result != 0:

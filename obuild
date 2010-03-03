@@ -1,0 +1,149 @@
+#!/usr/bin/env python
+
+import sys, os, re
+from os.path import *
+from collections import defaultdict
+
+OPTS = [x for x in sys.argv[1:] if x.startswith('-')]
+FNS  = [x for x in sys.argv[1:] if not x.startswith('-')]
+
+FORCE  =     '-f' in opts
+NOLINK =     '-c' in opts
+NATIVE = not '-b' in opts
+
+def object_of(fn):
+    name, ext = splitext(fn)
+    if ext == '.ml':
+        return name + ('.cmx' if NATIVE else '.cmo')
+    elif ext == ('.cmx' if NATIVE else '.cmo'):
+        return fn
+    elif ext == '':
+        return name + ('.cmx' if NATIVE else '.cmo')
+
+def source_of(fn):
+    name, ext = splitext(fn)
+    if ext == '.ml':
+        return fn
+    elif ext == ('.cmx' if NATIVE else '.cmo'):
+        return name + '.ml'
+    elif ext == '':
+        return name + '.ml'
+
+def deps_of(fn):
+    src = source_of(fn)
+    preproc = preproc_of(fn) or ''
+    cmd = 'ocamlfind ocamldep -native-filter %s %s' % (preproc, src)
+    with os.popen(cmd) as f:
+        line = f.readline().strip()
+    if not line:
+        return []
+    else:
+        deps = line.split(':', 1)[1]
+        return [source_of(x.strip()) for x in deps.split(' ') if x.strip()]
+
+def _tree():
+    return defaultdict(_tree)
+
+
+def find_deps(fn):
+    _deps = defaultdict(list)
+    ob = object_of(fn)
+    src = source_of(fn)
+    deps = deps_of(src)
+    _deps[fn].extend(deps)
+    [find_deps(n) for n in deps]
+    return _deps
+
+def buildseq(deps):
+    built = set()
+    seq = []
+    def inner(name):
+        localdeps = deps.get(name, [])
+        [inner(d) for d in localdeps]
+        if not name in built:
+            seq.append(name)
+            built.add(name)
+    [inner(n) for n in deps]
+    return seq
+
+def get_packages(srcfile):
+    with open(srcfile) as f:
+        m = re.search(r'\(\* ? PKG (.*?) ?\*\)', f.read(), re.MULTILINE)
+        return m.group(1).split(' ') if m else []
+
+def newer(this, that):
+    if isfile(this) and isfile(that):
+        return os.stat(this).st_mtime > os.stat(that).st_mtime
+    else:
+        return True
+
+def deps_newer(srcfile, deps):
+    for d in deps[srcfile]:
+        if newer(d, object_of(srcfile)):
+            return True
+
+def preproc_of(srcfile):
+    preproc = ''
+    with open(srcfile) as f:
+        m = re.search(r'\(\* ? LANG (.*?) ?\*\)', f.read(), re.MULTILINE)
+        if m:
+            preproc = pp_for_lang(m.group(1))
+    return preproc
+
+def pp_for_lang(lang):
+    cmd = 'ocamlfind query -predicates "syntax,preprocessor,camlp4o" %s -i-format' % lang
+    with os.popen(cmd) as f:
+        pth = ' '.join(x.strip() for x in f)
+    cmd = 'ocamlfind query -predicates "syntax,preprocessor,camlp4o" %s -format "%%a"' % lang
+    with os.popen(cmd) as f:
+        inc = ' '.join(x.strip() for x in f)
+    cmd = 'camlp4o %(pth)s %(inc)s' % locals()
+    return '-pp "%s"' % cmd
+    
+def build(srcfile, deps):
+    packages = get_packages(srcfile)
+    pkg = ('-package ' + ','.join(packages)) if packages else ''
+
+    preproc = ''
+    with open(srcfile) as f:
+        m = re.search(r'\(\* ? LANG (.*?) ?\*\)', f.read(), re.MULTILINE)
+        if m:
+            preproc = pp_for_lang(m.group(1))
+
+    cc = 'ocamlopt' if NATIVE else 'ocamlc'
+    cmd = 'ocamlfind %(cc)s %(pkg)s %(preproc)s -c %(srcfile)s' % locals()
+    # deps_newer is to avoid 'inconsistent assumptions' errors.
+    if FORCE or newer(srcfile, object_of(srcfile)) or deps_newer(srcfile, deps):
+        print cmd
+        result = os.system(cmd)
+        if result != 0:
+            print 'Build error.'
+            sys.exit(1)
+
+def link(srcfile, seq, deps):
+    packages = get_packages(srcfile)
+    for d in deps[srcfile]:
+        packages.extend(get_packages(d))
+    packages = sorted(set(packages))
+    pkg = ('-package ' + ','.join(packages)) if packages else ''
+    exe = splitext(srcfile)[0]
+    _objs = [object_of(n) for n in seq]
+    objs = ' '.join(_objs)
+    if any(newer(o, exe) for o in _objs):
+        cc = 'ocamlopt' if NATIVE else 'ocamlc'
+        cmd = 'ocamlfind %(cc)s -linkpkg %(pkg)s %(objs)s -o %(exe)s' % locals()
+        print cmd
+        return os.system(cmd)
+    return 0
+
+#----------------------------------------------------------------------
+
+for fn in FNS:
+    fn = source_of(fn)
+    deps = find_deps(fn)
+    seq = buildseq(deps)
+    for s in seq:
+        build(s, deps)
+    result = link(s, seq, deps)
+    if result:
+       sys.exit(result) 

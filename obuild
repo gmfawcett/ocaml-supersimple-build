@@ -16,17 +16,15 @@ CMX = ('.cmx' if NATIVE else '.cmo')
 
 def object_of(fn):
     name, ext = splitext(fn)
-    if ext in ('.ml', ''):
-        return name + CMX
-    elif ext == CMX:
-        return fn
+    if ext in ('.mli', '.cmi'):
+        return name + '.cmi'
+    return name + CMX
 
 def source_of(fn):
     name, ext = splitext(fn)
-    if ext == '.ml':
-        return fn
-    elif ext in (CMX, ''):
-        return name + '.ml'
+    if ext in ('.mli', '.cmi'):
+        return name + '.mli'
+    return name + '.ml'
 
 def deps_of(fn):
     src = source_of(fn)
@@ -122,7 +120,7 @@ def link(srcfile, seq, deps):
     packages = sorted(set(packages))
     pkg = ('-package ' + ','.join(packages)) if packages else ''
     exe = splitext(srcfile)[0]
-    _objs = [object_of(n) for n in seq]
+    _objs = [o for o in [object_of(n) for n in seq] if not o.endswith('.cmi')]
     objs = ' '.join(_objs)
     if any(newer(o, exe) for o in _objs):
         cc = 'ocamlopt' if NATIVE else 'ocamlc'

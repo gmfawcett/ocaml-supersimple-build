@@ -53,6 +53,4 @@ this program with `obuild test.ml` and you'll have an executable named
 
 - You need Python.
 
-- There is currently no support whatsoever for `.mli` files.
-
 - Several other weaknesses I haven't thought of yet.

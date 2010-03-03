@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+from __future__ import with_statement
 import sys, os, re
 from os.path import *
 from collections import defaultdict
@@ -7,9 +8,9 @@ from collections import defaultdict
 OPTS = [x for x in sys.argv[1:] if x.startswith('-')]
 FNS  = [x for x in sys.argv[1:] if not x.startswith('-')]
 
-FORCE  =     '-f' in opts
-NOLINK =     '-c' in opts
-NATIVE = not '-b' in opts
+FORCE  =     '-f' in OPTS
+NOLINK =     '-c' in OPTS
+NATIVE = not '-b' in OPTS
 
 CMX = ('.cmx' if NATIVE else '.cmo')
 

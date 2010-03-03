@@ -109,7 +109,7 @@ def build(srcfile, deps):
         cc = 'ocamlopt' if NATIVE else 'ocamlc'
         if isfile(interf_of(srcfile)):
             ifile = interf_of(srcfile)
-            cmd = 'ocamlfind %(cc)s %(pkg)s %(preproc)s -c %(ifile)s' % locals()
+            cmd = 'ocamlfind %(cc)s %(pkg)s -c %(ifile)s' % locals()
             print cmd
             os.system(cmd)
         cmd = 'ocamlfind %(cc)s %(pkg)s %(preproc)s -c %(srcfile)s' % locals()

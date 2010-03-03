@@ -11,22 +11,20 @@ FORCE  =     '-f' in opts
 NOLINK =     '-c' in opts
 NATIVE = not '-b' in opts
 
+CMX = ('.cmx' if NATIVE else '.cmo')
+
 def object_of(fn):
     name, ext = splitext(fn)
-    if ext == '.ml':
-        return name + ('.cmx' if NATIVE else '.cmo')
-    elif ext == ('.cmx' if NATIVE else '.cmo'):
+    if ext in ('.ml', ''):
+        return name + CMX
+    elif ext == CMX:
         return fn
-    elif ext == '':
-        return name + ('.cmx' if NATIVE else '.cmo')
 
 def source_of(fn):
     name, ext = splitext(fn)
     if ext == '.ml':
         return fn
-    elif ext == ('.cmx' if NATIVE else '.cmo'):
-        return name + '.ml'
-    elif ext == '':
+    elif ext in (CMX, ''):
         return name + '.ml'
 
 def deps_of(fn):
@@ -40,10 +38,6 @@ def deps_of(fn):
     else:
         deps = line.split(':', 1)[1]
         return [source_of(x.strip()) for x in deps.split(' ') if x.strip()]
-
-def _tree():
-    return defaultdict(_tree)
-
 
 def find_deps(fn):
     _deps = defaultdict(list)
@@ -134,7 +128,6 @@ def link(srcfile, seq, deps):
         cmd = 'ocamlfind %(cc)s -linkpkg %(pkg)s %(objs)s -o %(exe)s' % locals()
         print cmd
         return os.system(cmd)
-    return 0
 
 #----------------------------------------------------------------------
 

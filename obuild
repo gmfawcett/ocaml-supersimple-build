@@ -14,6 +14,9 @@ NATIVE = not 'b' in OPTS
 
 CMX = ('.cmx' if NATIVE else '.cmo')
 
+CIML_SUPPORT = True
+CIML_USED = {}
+
 def object_of(fn):
     name, ext = splitext(fn)
     return name + CMX
@@ -25,6 +28,33 @@ def source_of(fn):
 def interf_of(fn):
     name, ext = splitext(fn)
     return name + '.mli'
+
+def directive(name, txt):
+    m = re.search(r'\(\* ? %s (.*?) ?\*\)' % name, txt, re.MULTILINE)
+    return m.group(1) if m else None
+
+def preproc_of(srcfile):
+    preproc = ''
+    with open(srcfile) as f:
+        txt = f.read()
+    lang = directive('LANG', txt)
+    if lang:
+        preproc = pp_for_lang(lang)
+        if CIML_SUPPORT:
+            if 'pa_ciml' in lang:
+                ciml_opts = directive('CIML', txt) or ''
+                CIML_USED[srcfile] = ciml_opts
+    return preproc
+
+def pp_for_lang(lang):
+    cmd = 'ocamlfind query -predicates "syntax,preprocessor,camlp4o" %s -i-format' % lang
+    with os.popen(cmd) as f:
+        pth = ' '.join(x.strip() for x in f)
+    cmd = 'ocamlfind query -predicates "syntax,preprocessor,camlp4o" %s -format "%%a"' % lang
+    with os.popen(cmd) as f:
+        inc = ' '.join(x.strip() for x in f)
+    cmd = 'camlp4o %(pth)s %(inc)s' % locals()
+    return '-pp "%s"' % cmd
 
 def deps_of(fn):
     src = source_of(fn)
@@ -62,8 +92,8 @@ def buildseq(deps):
 
 def get_packages(srcfile):
     with open(srcfile) as f:
-        m = re.search(r'\(\* ? PKG (.*?) ?\*\)', f.read(), re.MULTILINE)
-        return m.group(1).split(' ') if m else []
+        pkg = directive('PKG', f.read())
+    return pkg.split(' ') if pkg else []
 
 def newer(this, that):
     if isfile(this) and isfile(that):
@@ -75,35 +105,11 @@ def deps_newer(srcfile, deps):
     for d in deps[srcfile]:
         if newer(d, object_of(srcfile)):
             return True
-
-def preproc_of(srcfile):
-    preproc = ''
-    with open(srcfile) as f:
-        m = re.search(r'\(\* ? LANG (.*?) ?\*\)', f.read(), re.MULTILINE)
-        if m:
-            preproc = pp_for_lang(m.group(1))
-    return preproc
-
-def pp_for_lang(lang):
-    cmd = 'ocamlfind query -predicates "syntax,preprocessor,camlp4o" %s -i-format' % lang
-    with os.popen(cmd) as f:
-        pth = ' '.join(x.strip() for x in f)
-    cmd = 'ocamlfind query -predicates "syntax,preprocessor,camlp4o" %s -format "%%a"' % lang
-    with os.popen(cmd) as f:
-        inc = ' '.join(x.strip() for x in f)
-    cmd = 'camlp4o %(pth)s %(inc)s' % locals()
-    return '-pp "%s"' % cmd
     
 def build(srcfile, deps):
     packages = get_packages(srcfile)
     pkg = ('-package ' + ','.join(packages)) if packages else ''
-
-    preproc = ''
-    with open(srcfile) as f:
-        m = re.search(r'\(\* ? LANG (.*?) ?\*\)', f.read(), re.MULTILINE)
-        if m:
-            preproc = pp_for_lang(m.group(1))
-
+    preproc = preproc_of(srcfile)
     # deps_newer is to avoid 'inconsistent assumptions' errors.
     if FORCE or newer(srcfile, object_of(srcfile)) or deps_newer(srcfile, deps):
         cc = 'ocamlopt' if NATIVE else 'ocamlc'
@@ -127,6 +133,17 @@ def link(srcfile, seq, deps):
     pkg = ('-package ' + ','.join(packages)) if packages else ''
     exe = splitext(srcfile)[0]
     _objs = [o for o in [object_of(n) for n in seq] if not o.endswith('.cmi')]
+    if CIML_SUPPORT:
+        for x in _objs[:]:
+            _src = source_of(x)
+            if _src in CIML_USED:
+                _ciml = splitext(_src)[0] + '_ciml.c'
+                _objs.insert(0, _ciml)
+                _objs.append(CIML_USED[_src])
+        if srcfile in CIML_USED:
+            _ciml = splitext(srcfile)[0] + '_ciml.c'
+            _objs._insert(0, _ciml)
+            _objs.append(CIML_USED[srcfile])
     objs = ' '.join(_objs)
     if any(newer(o, exe) for o in _objs):
         cc = 'ocamlopt' if NATIVE else 'ocamlc'
@@ -143,6 +160,6 @@ for fn in FNS:
     for s in seq:
         build(s, deps)
     if LINK:
-        result = link(s, seq, deps)
+        result = link(fn, seq, deps)
         if result:
            sys.exit(result) 

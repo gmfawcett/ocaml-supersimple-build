@@ -5,17 +5,35 @@ import sys, os, re
 from os.path import *
 from collections import defaultdict
 
-FNS  = [x for x in sys.argv[1:] if not x.startswith('-')]
-OPTS = ''.join([x[1:] for x in sys.argv[1:] if x.startswith('-')])
+# optionally, set up the environment
+ENVFILES = ['.obuild.env', os.path.expanduser('~/.obuild.env')]
 
+for envfile in ENVFILES:
+    if os.path.isfile(envfile):
+        with open(envfile) as f:
+            for line in f:      # e.g. "DBHOST=foobar"
+                m = re.match(r'(\S*)\s*=\s*(\S*)', line)
+                if m:
+                    k, v = m.groups()
+                    os.environ[k] = v
+
+FILES  = [x for x in sys.argv[1:] if not x.startswith('-')]
+OPTS   = ''.join([x[1:] for x in sys.argv[1:] if x.startswith('-')])
+
+# options
 FORCE  =     'f' in OPTS
 LINK   = not 'c' in OPTS
 NATIVE = not 'b' in OPTS
+QUIET  =     'q' in OPTS
 
 CMX = ('.cmx' if NATIVE else '.cmo')
 
 CIML_SUPPORT = True
 CIML_USED = {}
+
+def debug(cmd):
+    if not QUIET:
+        print cmd
 
 def object_of(fn):
     name, ext = splitext(fn)
@@ -47,20 +65,26 @@ def preproc_of(srcfile):
     return preproc
 
 def pp_for_lang(lang):
-    cmd = 'ocamlfind query -predicates "syntax,preprocessor,camlp4o" %s -i-format' % lang
-    with os.popen(cmd) as f:
-        pth = ' '.join(x.strip() for x in f)
-    cmd = 'ocamlfind query -predicates "syntax,preprocessor,camlp4o" %s -format "%%a"' % lang
-    with os.popen(cmd) as f:
-        inc = ' '.join(x.strip() for x in f)
-    cmd = 'camlp4o %(pth)s %(inc)s' % locals()
-    return '-pp "%s"' % cmd
+    langs = lang.split(' ')
+    if not langs:
+        return ''
+    else:
+        local =  [x for x in langs if x.startswith('.')]
+        system = [x for x in langs if not x.startswith('.')]
+        out = ['-syntax camlp4o']
+        if system:
+            out.append('-package %s' % (','.join(system)))
+        for x in local:
+            out.append('-ppopt %s' % x)
+        return ' '.join(out)
+    
 
 def deps_of(fn):
     src = source_of(fn)
     preproc = preproc_of(fn) or ''
     filt = '-native-filter' if NATIVE else '-bytecode-filter'
     cmd = 'ocamlfind ocamldep %s %s %s' % (filt, preproc, src)
+    debug(cmd)
     with os.popen(cmd) as f:
         line = f.readline().strip()
     if not line:
@@ -92,8 +116,10 @@ def buildseq(deps):
 
 def get_packages(srcfile):
     with open(srcfile) as f:
-        pkg = directive('PKG', f.read())
-    return pkg.split(' ') if pkg else []
+        txt = f.read()
+    pkg = directive('PKG', txt)
+    packages = pkg.split(' ') if pkg else []
+    return packages
 
 def newer(this, that):
     if isfile(this) and isfile(that):
@@ -120,10 +146,10 @@ def build(srcfile, deps):
         if isfile(interf_of(srcfile)):
             ifile = interf_of(srcfile)
             cmd = 'ocamlfind %(cc)s %(pkg)s -c %(ifile)s' % locals()
-            print cmd
+            debug(cmd)
             os.system(cmd)
         cmd = 'ocamlfind %(cc)s %(opts)s %(pkg)s %(preproc)s -c %(srcfile)s' % locals()
-        print cmd
+        debug(cmd)
         result = os.system(cmd)
         if result != 0:
             print 'Build error.'
@@ -156,12 +182,12 @@ def link(srcfile, seq, deps):
     if any(newer(o, exe) for o in _objs):
         cc = 'ocamlopt' if NATIVE else 'ocamlc'
         cmd = 'ocamlfind %(cc)s %(opts)s -linkpkg %(pkg)s %(objs)s -o %(exe)s' % locals()
-        print cmd
+        debug(cmd)
         return os.system(cmd)
 
 #----------------------------------------------------------------------
 
-for fn in FNS:
+for fn in FILES:
     fn = source_of(fn)
     deps = find_deps(fn)
     seq = buildseq(deps)

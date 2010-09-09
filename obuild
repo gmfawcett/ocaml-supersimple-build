@@ -93,13 +93,14 @@ def deps_of(fn):
         _deps = [x for x in line.split(':', 1)[1].split(' ') if x.strip()]
         return [x for x in [source_of(x.strip()) for x in _deps] if not x == fn]
 
-def find_deps(fn):
-    _deps = defaultdict(list)
+def find_deps(fn, _deps=None):
+    if _deps is None:
+        _deps = defaultdict(list)
     ob = object_of(fn)
     src = source_of(fn)
     deps = deps_of(src)
     _deps[fn].extend(deps)
-    [find_deps(n) for n in deps]
+    [find_deps(n, _deps) for n in deps]
     return _deps
 
 def buildseq(deps):

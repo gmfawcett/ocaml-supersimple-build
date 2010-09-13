@@ -173,7 +173,7 @@ def link(srcfile, seq, deps):
                 _objs.append(CIML_USED[_src])
         if srcfile in CIML_USED:
             _ciml = splitext(srcfile)[0] + '_ciml.c'
-            _objs._insert(0, _ciml)
+            _objs.insert(0, _ciml)
             _objs.append(CIML_USED[srcfile])
     objs = ' '.join(_objs)
     _opts = []

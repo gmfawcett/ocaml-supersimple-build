@@ -25,6 +25,7 @@ FORCE  =     'f' in OPTS
 LINK   = not 'c' in OPTS
 NATIVE = not 'b' in OPTS
 QUIET  =     'q' in OPTS
+PROFILE =    'p' in OPTS
 
 CMX = ('.cmx' if NATIVE else '.cmo')
 
@@ -146,6 +147,8 @@ def build(srcfile, deps):
     _opts = []
     if 'threads' in packages:
         _opts.append('-thread')
+    if PROFILE:
+        _opts.append('-p')
     opts = ' '.join(_opts)
     if FORCE or newer(srcfile, object_of(srcfile)) or deps_newer(srcfile, deps):
         cc = 'ocamlopt' if NATIVE else 'ocamlc'
@@ -184,6 +187,8 @@ def link(srcfile, seq, deps):
     _opts = []
     if 'threads' in packages:
         _opts.append('-thread')
+    if PROFILE:
+        _opts.append('-p')
     for lib in LIBS:
         _opts.extend(['-cclib', '-l%s' % lib])
     opts = ' '.join(_opts)

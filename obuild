@@ -4,6 +4,7 @@ from __future__ import with_statement
 import sys, os, re
 from os.path import *
 from collections import defaultdict
+from subprocess import *
 
 # optionally, set up the environment
 ENVFILES = ['.obuild.env', os.path.expanduser('~/.obuild.env')]
@@ -159,7 +160,13 @@ def build(srcfile, deps):
             os.system(cmd)
         cmd = 'ocamlfind %(cc)s %(opts)s %(pkg)s %(preproc)s -c %(srcfile)s' % locals()
         debug(cmd)
-        result = os.system(cmd)
+        # we use Popen here to collect the stderr output, and print it
+        # on a single line. This is handy for Emacs' flymake mode.
+        p = Popen(cmd, shell=True, stderr=PIPE)
+        err = p.stderr.readlines()
+        print ' '.join([l.strip() for l in err])
+        p.stderr.close()
+        result = p.wait()
         if result != 0:
             print 'Build error.'
             sys.exit(1)

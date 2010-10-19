@@ -180,16 +180,13 @@ def link(srcfile, seq, deps):
     exe = splitext(srcfile)[0]
     _objs = [o for o in [object_of(n) for n in seq] if not o.endswith('.cmi')]
     if CIML_SUPPORT:
-        for x in _objs[:]:
+        for x in _objs[:] + [srcfile]:
             _src = source_of(x)
             if _src in CIML_USED:
                 _ciml = splitext(_src)[0] + '_ciml.c'
-                _objs.insert(0, _ciml)
+                if not _ciml in _objs:
+                    _objs.insert(0, _ciml)
                 _objs.append(CIML_USED[_src])
-        if srcfile in CIML_USED:
-            _ciml = splitext(srcfile)[0] + '_ciml.c'
-            _objs.insert(0, _ciml)
-            _objs.append(CIML_USED[srcfile])
     objs = ' '.join(_objs)
     _opts = []
     if 'threads' in packages:
